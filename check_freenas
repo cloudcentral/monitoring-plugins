@@ -1,156 +1,429 @@
-#!/usr/bin/env python
+#!/usr/bin/env ruby
+# frozen_string_literal: true
 
-# The MIT License (MIT)
-# Copyright (c) 2015 Goran Tornqvist
 #
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
+# FreeNAS Plugin
+# ==
+# Author: Marco Peterseil
+# Created: 03-2017
+# License: GPLv3 - http://www.gnu.org/licenses
+# URL: https://gitlab.com/6uellerBpanda/check_freenas
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 #
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
-# ******************************************************************************
-# check_freenas.py - Simple script for monitoring freenas status and replication
-# PS: you may want to check out this script as well:
-# https://github.com/Doctor-love/check_freenas_api/blob/master/check_freenas_api.py
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-#
-# Tip: To ignore capacity warnings which are set quite low, change these rows in check_alerts():
-# if alert['level'] != 'OK':
-#     if alert['message'].find('capacity for the volume') == -1:
-#         errors = errors + 1
-#
-# Troubleshooting: If you receive an error from the script, make sure you can access the api of your freenas using a web browser. 
-# Example: http://freenas/api/v1.0/system/alert/?format=json (login: root)
 
-import argparse
-import json
-import sys
-import string
- 
-import requests
- 
-class Startup(object):
- 
-    def __init__(self, hostname, user, secret):
-        self._hostname = hostname
-        self._user = user
-        self._secret = secret
- 
-        self._ep = 'http://%s/api/v1.0' % hostname
- 
-    def request(self, resource, method='GET', data=None):
-        if data is None:
-            data = ''
-        try:
-            r = requests.request(
-                method,
-                '%s/%s/' % (self._ep, resource),
-                data=json.dumps(data),
-                headers={'Content-Type': "application/json"},
-                auth=(self._user, self._secret),
-            )
-        except:
-            print 'UNKNOWN - Error when contacting freenas server: ' + str(sys.exc_info())
-            sys.exit(3)
- 
-        if r.ok:
-            try:
-                return r.json()
-            except:
-                print 'UNKNOWN - Error when contacting freenas server: ' + str(sys.exc_info())
-                sys.exit(3)
- 
-    def check_repl(self):
-        repls = self.request('storage/replication')
-        errors=0
-        msg=''
-        try:
-            for repl in repls:
-                if repl['repl_status'] != 'Succeeded' and repl['repl_status'] != None and repl['repl_status'][:7] != 'Sending' and repl['repl_status'] != 'Up to date':
-                    errors = errors + 1
-                    msg = msg + repl['repl_zfs'] + ' [' +  repl['repl_status'] + '] ' ;
-        except:
-            print 'UNKNOWN - Error when contacting freenas server: ' + str(sys.exc_info())
-            sys.exit(3)
- 
-        if errors > 0:
-            print 'WARNING - ' + msg.strip() + '. Go to Storage > Replication Tasks > View Replication Tasks in FreeNAS for more details.'
-            sys.exit(1)
-        else:
-            print 'OK - No replication errors'
-            sys.exit(0)
- 
-    def check_alerts(self):
-        alerts = self.request('system/alert')
-        warn=0
-        crit=0
-        msg=''
-        try:
-            for alert in alerts:
-              if alert['dismissed'] == False:
-                if alert['level'] == 'CRIT':
-                    crit = crit + 1
-                    msg = msg + '- (C) ' + string.replace(alert['message'], '\n', '. ') + ' '
-                elif alert['level'] == 'WARN':
-                    warn = warn + 1
-                    msg = msg + '- (W) ' + string.replace(alert['message'], '\n', '. ') + ' '
-        except:
-            print 'UNKNOWN - Error when contacting freenas server: ' + str(sys.exc_info())
-            sys.exit(3)
-        
-        if crit > 0:
-            print 'CRITICAL ' + msg
-            sys.exit(2)
-        elif warn > 0:
-            print 'WARNING ' + msg
-            sys.exit(1)
-        else:
-            print 'OK - No problem alerts'
-            sys.exit(0)
+require 'optparse'
+require 'net/https'
+require 'net/ssh'
+require 'json'
 
-    def check_updates(self):
-        updates = self.request('system/update/check')
-        if not updates:
-            print 'OK - No pending updates.'
-            sys.exit(0)
-        else:
-            print 'WARNING - There are pending updates. Go to System > Update to apply pending updates.'
-            sys.exit(1)
- 
-def main():
-    parser = argparse.ArgumentParser(description='Checks a freenas server using the API')
-    parser.add_argument('-H', '--hostname', required=True, type=str, help='Hostname or IP address')
-    parser.add_argument('-u', '--user', required=True, type=str, help='Normally only root works')
-    parser.add_argument('-p', '--passwd', required=True, type=str, help='Password')
-    parser.add_argument('-t', '--type', required=True, type=str, help='Type of check, either repl, alerts or updates')
- 
-    args = parser.parse_args(sys.argv[1:])
- 
-    startup = Startup(args.hostname, args.user, args.passwd)
- 
-    if args.type == 'alerts':
-        startup.check_alerts()
-    elif args.type == 'repl':
-        startup.check_repl()
-    elif args.type == 'updates':
-        startup.check_updates()
-    else:
-        print "Unknown type: " + args.type
-        sys.exit(3)
- 
-if __name__ == '__main__':
-    main()
-    
+version = 'v0.3.1'
+
+# optparser
+banner = <<~HEREDOC
+  check_freenas #{version} [https://gitlab.com/6uellerBpanda/check_freenas]\n
+  This plugin checks various parameters of FreeNAS\n
+  Mode:
+    FreeNAS:
+      alerts                  Notifies of alerts
+      updates                 Check if update is available
+    ZFS Zpool:
+      zpool_usage             Checks zpool usage in percentage
+      zpool_iostat_read_iops  Checks read IOPS of zpool
+      zpool_iostat_write_iops Checks write IOPS of zpool
+      zpool_iostat_read_bw    Checks read bandwith in MB of zpool
+      zpool_iostat_write_bw   Checks write bandwith in MB of zpool
+    ZFS Dataset:
+      datasets_usage          Checks used space of all datasets in megabytes. Limit output via include,exclude
+      dataset_quota           Checks dataset quota usage in percentage
+    ARC Cache:
+      arc_cache_miss_ratio    Checks ARC miss ratio
+      arc_cache_meta_usage    Checks ARC metadata usage against metadata limit
+      arc_cache_mru_ghost     Checks ARC most recently used ghost hits
+      arc_cache_mfu_ghost     Checks ARC most frequently used ghost hits
+    I/O,Disk Statistics:
+      io_requests_pending     Checks pending io requests via gstat
+      disk_busy               Checks disk busy usage via gstat
+
+
+  Usage: #{File.basename(__FILE__)} [options]
+HEREDOC
+
+options = {}
+OptionParser.new do |opts| # rubocop:disable  Metrics/BlockLength
+  opts.banner = banner.to_s
+  opts.separator ''
+  opts.separator 'Options:'
+  opts.on('-s', '--address ADDRESS', 'FreeNAS host address') do |s|
+    options[:address] = s
+  end
+  opts.on('-u', '--username USERNAME', 'Username to connect - only root possible') do |u|
+    options[:username] = u
+  end
+  opts.on('-p', '--password PASSWORD', 'Password for user') do |p|
+    options[:password] = p
+  end
+  opts.on('-k', '--insecure', 'No SSL verification') do |k|
+    options[:insecure] = k
+  end
+  opts.on('-m', '--mode MODE', String, 'Mode to check') do |m|
+    options[:mode] = m
+  end
+  opts.on('-z', '--zpool ZPOOL', String, 'Zpool name') do |z|
+    options[:zpool] = z
+  end
+  opts.on('-d', '--dataset DATASET', String, 'Dataset name') do |d|
+    options[:dataset] = d
+  end
+  opts.on('-i', '--include INCLUDE', String, 'Include dataset (regex)') do |i|
+    options[:include] = i
+  end
+  opts.on('-x', '--exclude EXCLUDE', String, 'Exclude dataset (regex)') do |x|
+    options[:exclude] = x
+  end
+  opts.on('-w', '--warning WARNING', 'Warning threshold') do |w|
+    options[:warning] = w
+  end
+  opts.on('-c', '--critical CRITICAL', 'Critical threshold') do |c|
+    options[:critical] = c
+  end
+  opts.on('-v', '--version', 'Print version information') do
+    puts "check_freenas #{version}"
+  end
+  opts.on('-h', '--help', 'Show this help message') do
+    puts opts
+  end
+  ARGV.push('-h') if ARGV.empty?
+end.parse!
+
+# check args for api calls
+unless ARGV.empty?
+  raise OptionParser::MissingArgument if options[:address].nil? || options[:password].nil? || options[:username].nil?
+end
+
+# check freenas
+class CheckFreeNAS
+  def initialize(options) # rubocop:disable Metrics/MethodLength
+    @options = options
+    init_arr
+    alert_check
+    update_check
+    dataset_usage_check
+    dataset_quota_check
+    zpool_iostat_read_iops
+    zpool_iostat_read_bw
+    zpool_iostat_write_iops
+    zpool_iostat_write_bw
+    zpool_usage_check
+    arc_cache_checks
+    io_requests_pending
+    disk_busy
+  end
+
+  #--------#
+  # HELPER #
+  #--------#
+
+  def init_arr
+    @perfdata = []
+    @message = []
+    @critical = []
+    @warning = []
+    @okays = []
+  end
+
+  # Define some helper methods for Nagios with appropriate exit codes
+  def ok_msg(message)
+    puts "OK - #{message}"
+    exit 0
+  end
+
+  def crit_msg(message)
+    puts "Critical - #{message}"
+    exit 2
+  end
+
+  def warn_msg(message)
+    puts "Warning - #{message}"
+    exit 1
+  end
+
+  def unk_msg(message)
+    puts "Unknown - #{message}"
+    exit 3
+  end
+
+  def build_perfdata(perfdata:)
+    @perfdata << "#{perfdata};#{@options[:warning]};#{@options[:critical]}"
+  end
+
+  def convert_to_pct(value1:, value2:, type:)
+    case type
+    when 'ratio' then @output = (100 * value1.to_f / (value1.to_f + value2.to_f)).round(2)
+    when 'usage' then @output = (100 * value1.to_f / value2.to_f).round(2)
+    end
+  end
+
+  def convert_bytes_to_unit(data:, unit:)
+    case unit
+    when 'kb' then @usage = data.to_i / 1024
+    when 'mb' then @usage = data.to_i / 1024 / 1024
+    when 'gb' then @usage = data.to_i / 1024 / 1024 / 1024
+    end
+  end
+
+  # build service output
+  def build_output(msg:)
+    @message = msg
+  end
+
+  # helper for threshold checking
+  def check_thresholds(type: 'non-array', data:)
+    if data > @options[:critical].to_i
+      @critical << @message
+    elsif data > @options[:warning].to_i
+      @warning << @message
+    else
+      @okays << @message
+    end
+    # make the final step
+    build_final_output unless type != 'non-array'
+  end
+
+  # mix everything together for exit
+  def build_final_output
+    perf_output = " | #{@perfdata.join(' ')}"
+    if @critical.any?
+      crit_msg(@critical.join(', ') + perf_output)
+    elsif @warning.any?
+      warn_msg(@warning.join(', ') + perf_output)
+    else
+      ok_msg(@okays.join(', ') + perf_output)
+    end
+  end
+
+  #----------#
+  # API AUTH #
+  #----------#
+
+  # create url
+  def url(path:)
+    uri = URI("https://#{@options[:address]}/#{path}")
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+    http.verify_mode = OpenSSL::SSL::VERIFY_NONE if @options[:insecure]
+    request = Net::HTTP::Get.new(uri.request_uri)
+    request.basic_auth(@options[:username], @options[:password])
+    @response = http.request(request)
+  rescue StandardError => e
+    unk_msg(e)
+  end
+
+  # check some known response
+  def check_http_response
+    unk_msg(@response.message).to_s if @response.code != '200'
+  end
+
+  # init http req
+  def http_connect(path:)
+    url(path: path)
+    check_http_response
+  end
+
+  #----------#
+  # SSH AUTH #
+  #----------#
+  def ssh_connect(command:)
+    Net::SSH.start(@options[:address], @options[:username], password: @options[:password]) do |ssh|
+      @ssh_output = ssh.exec!(command)
+    end
+  rescue StandardError => e
+    unk_msg(e)
+  end
+
+  #--------#
+  # CHECKS #
+  #--------#
+
+  ### ALERT CHECK
+  def alert_check # rubocop:disable Metrics/MethodLength
+    return unless @options[:mode] == 'alerts'
+    http_connect(path: 'api/v1.0/system/alert/')
+    data = JSON.parse(@response.body)
+    ok_msg('The system has no alerts') if data.empty?
+    data.each do |item|
+      next unless item['dismissed'] == false
+      case item['level']
+      when 'WARN' then warn_msg(item['message'])
+      when 'CRIT' then crit_msg(item['message'])
+      else ok_msg(item['message'])
+      end
+    end
+  end
+
+  ### UPDATE CHECK
+  def update_check
+    return unless @options[:mode] == 'updates'
+    http_connect(path: 'api/v1.0/system/update/check/')
+    if JSON.parse(@response.body).empty?
+      ok_msg('No pending updates')
+    else
+      warn_msg('There are pending updates. Go to System > Update to apply pending updates')
+    end
+  end
+
+  ### DATASET USAGE CHECK
+  def get_datasets(data:) # rubocop:disable Metrics/AbcSize
+    # include datasets
+    data.keep_if { |item| /#{@options[:include]}/.match(item['name']) } unless @options[:include].to_s.empty?
+    # exclude datasets
+    data.delete_if { |item| /#{@options[:exclude]}/.match(item['name']) } unless @options[:exclude].to_s.empty?
+    data.each do |item|
+      # skip useless mountpoints
+      next if item['mountpoint'] == 'legacy'
+      used_mb = item['used'] / 1024 / 1024
+      build_output(msg: "#{item['name']} used #{used_mb}MB")
+      build_perfdata(perfdata: "#{item['name']}=#{used_mb}MB")
+      check_thresholds(type: 'array', data: used_mb)
+    end
+  end
+
+  def dataset_usage_check
+    return unless @options[:mode] == 'datasets_usage'
+    http_connect(path: "api/v1.0/storage/volume/#{@options[:zpool]}/datasets/?limit=50")
+    get_datasets(data: JSON.parse(@response.body))
+    build_final_output
+  end
+
+  ### DATASET QUOTA CHECK
+  def dataset_quota_check
+    return unless @options[:mode] == 'dataset_quota_usage'
+    ssh_connect(command: "zfs list -Hp -o used,refquota #{@options[:dataset]}")
+    unk_msg("No refquota found for #{@options[:dataset]}") if @ssh_output.split[1] == '0'
+    convert_to_pct(value1: @ssh_output.split[0], value2: @ssh_output.split[1], type: 'usage')
+    build_output(msg: "#{@options[:dataset]}: usage #{@output}%")
+    build_perfdata(perfdata: "#{@options[:dataset]}=#{@output}%")
+    check_thresholds(data: @output)
+  end
+
+  ### ZPOOL IOSTAT CHECK
+  def zpool_iostat_format_helper(data:, mops:)
+    @output = case data[-1]
+              when 'K' then data.to_f.public_send(mops, 1024).round(2)
+              when 'M' then data.to_f.round(2)
+              else data.to_f
+              end
+  end
+
+  def zpool_iostat_helper(type:, msg_output:, msg_perf:, size: '', mops: '/')
+    ssh_connect(command: "zpool iostat #{@options[:zpool]} 1 2 | stdbuf -o0 awk '{print $#{type}}' | tail -n 1 | tr -d \'\\n\'")
+    zpool_iostat_format_helper(data: @ssh_output, mops: mops.to_s)
+    build_output(msg: "#{msg_output}: #{@output}#{size}")
+    build_perfdata(perfdata: "#{msg_perf}=#{@output}#{size}")
+    check_thresholds(data: @output)
+  end
+
+  # iops
+  def zpool_iostat_read_iops
+    return unless @options[:mode] == 'zpool_iostat_read_iops'
+    zpool_iostat_helper(type: 4, mops: '*', msg_output: 'Read IOPS', msg_perf: 'read_iops')
+  end
+
+  def zpool_iostat_write_iops
+    return unless @options[:mode] == 'zpool_iostat_write_iops'
+    zpool_iostat_helper(type: 5, mops: '*', msg_output: 'Write IOPS', msg_perf: 'write_iops')
+  end
+
+  # bandwith
+  def zpool_iostat_read_bw
+    return unless @options[:mode] == 'zpool_iostat_read_bw'
+    zpool_iostat_helper(type: 6, msg_output: 'Read bandwith', msg_perf: 'read_bw', size: 'MB')
+  end
+
+  def zpool_iostat_write_bw
+    return unless @options[:mode] == 'zpool_iostat_write_bw'
+    zpool_iostat_helper(type: 7, msg_output: 'Write bandwith', msg_perf: 'write_bw', size: 'MB')
+  end
+
+  ### ZPOOL USAGE CHECK
+  def zpool_usage_check
+    return unless @options[:mode] == 'zpool_usage'
+    http_connect(path: "api/v1.0/storage/volume/#{@options[:zpool]}/")
+    data = JSON.parse(@response.body)
+    build_output(msg: "#{@options[:zpool]}: usage #{data['used_pct']}")
+    build_perfdata(perfdata: "#{@options[:zpool]}=#{data['used_pct']}")
+    check_thresholds(data: data['used_pct'].to_i)
+  end
+
+  ### ARC CACHE CHECKS
+  def arc_cache_helper(sysctl:, msg_output:, perf_label: @options[:mode])
+    ssh_connect(command: "sysctl -q #{sysctl}")
+    convert_to_pct(value1: @ssh_output.split[1], value2: @ssh_output.split[3], type: 'ratio')
+    build_output(msg: "#{msg_output}: #{@output}%")
+    build_perfdata(perfdata: "#{perf_label}=#{@output}%")
+    check_thresholds(data: @output)
+  end
+
+  def arc_cache_checks # rubocop:disable Metrics/MethodLength
+    case @options[:mode]
+    # miss ratio
+    when 'arc_cache_miss_ratio' then arc_cache_helper(
+      sysctl: 'kstat.zfs.misc.arcstats.misses kstat.zfs.misc.arcstats.hits',
+      msg_output: 'ARC cache miss ratio'
+    )
+    # metadata usage
+    when 'arc_cache_meta_usage' then arc_cache_helper(
+      sysctl: 'kstat.zfs.misc.arcstats.arc_meta_used kstat.zfs.misc.arcstats.arc_meta_limit',
+      msg_output: 'ARC cache metadata usage'
+    )
+    # mru ghost
+    when 'arc_cache_mru_ghost' then arc_cache_helper(
+      sysctl: 'kstat.zfs.misc.arcstats.mru_ghost_hits kstat.zfs.misc.arcstats.hits',
+      msg_output: 'ARC cache mru ghost hits'
+    )
+    # mfu ghost
+    when 'arc_cache_mfu_ghost' then arc_cache_helper(
+      sysctl: 'kstat.zfs.misc.arcstats.mfu_ghost_hits kstat.zfs.misc.arcstats.hits',
+      msg_output: 'ARC cache mfu ghost hits'
+    )
+    end
+  end
+
+  ### IO REQ PENDING
+  def io_requests_pending
+    return unless @options[:mode] == 'io_requests_pending'
+    ssh_connect(command: "gstat -abp | awk '{print $10,$1}' | tail -n +3")
+    Hash[*@ssh_output.split(' ')].each do |disk, lq|
+      build_output(msg: "#{disk}: #{lq}")
+      build_perfdata(perfdata: "#{disk}=#{lq.to_i}")
+      check_thresholds(type: 'array', data: lq.to_i)
+    end
+    build_final_output
+  end
+
+  ### DISK BUSY
+  def disk_busy
+    return unless @options[:mode] == 'disk_busy'
+    ssh_connect(command: "gstat -abp | awk '{print $10, $9}' | tail -n +3")
+    Hash[*@ssh_output.split(' ')].each do |disk, busy|
+      build_output(msg: "#{disk}: #{busy}%")
+      build_perfdata(perfdata: "#{disk}=#{busy.to_f}%")
+      check_thresholds(type: 'array', data: busy.to_f)
+    end
+    build_final_output
+  end
+end
+
+CheckFreeNAS.new(options)
+
