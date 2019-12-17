@@ -1,0 +1,52 @@
+#!/bin/bash
+#
+#       AUTHOR - Raman Sailopal
+#
+#       Script that uses Unitrends API to attain backup failure information
+#       credentials file is required
+#
+#       First passed field is the Protected Asset name and the second is the IP
+#       address of the Unitrends server
+#
+dat=$(date +%b" "%d", "%Y)
+UEB_SERVER=$1
+USER=$2
+PASS=$3
+generate_auth_json()
+{
+  cat <<EOF
+{
+  "username": "$USER",
+  "password": "$PASS"
+}
+EOF
+}
+token=$(curl -s -X POST -d "$(generate_auth_json)" -H "Accept: application/json" -H "Host: "$UEB_SERVER $UEB_SERVER"/api/login" | jq .auth_token)
+token1=$(echo $token | tr -d '"')
+#curl -s -X GET -H "Accept: application/json" -H "Host: "$UEB_SERVER -H "AuthToken: $token1" $UEB_SERVER"/api/reports/backup/failure"
+cnames=$(curl -s -X GET -H "Accept: application/json" -H "Host: "$UEB_SERVER -H "AuthToken: $token1" $UEB_SERVER"/api/reports/backup/failure" | jq '.data[].client_name')
+sdates=$(curl -s -X GET -H "Accept: application/json" -H "Host: "$UEB_SERVER -H "AuthToken: $token1" $UEB_SERVER"/api/reports/backup/failure" | jq '.data[].start_date')
+count=0
+for var in $(echo $cnames)
+do
+        count=$(echo $count + 1 | bc)
+        clientnames[$count]=$var
+done
+count1=0
+echo $sdates | awk -F\" '{ for (i=1;i<NF;i++) print substr($i,1,11) }' | while read var
+do
+        if [ "$var" != "" ]
+        then
+                count1=$(echo $count1 + 1 | bc)
+                if [ "$var" == "$dat" ]
+                then
+                        echo "Backup for $clientnames[$count1] has failed"
+                        exit 2
+                else
+                        echo "Backups for $count1 client was successful"
+                        exit 0
+                fi
+        fi
+done
+
+
