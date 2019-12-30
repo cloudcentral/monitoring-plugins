@@ -112,7 +112,7 @@ function _get_exp() {
 }
 
 # Check if QNAP is online
-TEST="$(_snmpstatus -t 10 -r 0 2>&1)"
+TEST="$(_snmpstatus -t 10 -r 1 2>&1)"
 if [ "$TEST" == "Timeout: No Response from $strHostname" ]; then
         echo "CRITICAL: SNMP to $strHostname is not available or wrong community string";
         exit 2;
