@@ -1,3 +1,8 @@
+
+Invoke-WebRequest -Uri https://github.com/mickem/nscp/releases/download/0.5.2.35/NSCP-0.5.2.35-x64.msi -OutFile 'c:\nscp.msi'
+
+Start-Process c:\nscp.msi -Wait
+
 Write-Host "Install nsclient from nsclient.org first"
 $password = Read-Host -Prompt 'Input your password'
 $monitoring_ip = Read-Host -Prompt 'Input your monitoring ip'
