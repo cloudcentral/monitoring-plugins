@@ -57,5 +57,11 @@ fi
 curl https://raw.githubusercontent.com/cloudcentral/monitoring-plugins/master/plugins/check_qnap -o /usr/lib64/nagios/plugins/check_qnap
 chmod +x /usr/lib64/nagios/plugins/check_qnap
 
-curl https://raw.githubusercontent.com/cloudcentral/monitoring-plugins/master/plugins/check_forti.pl-o /usr/lib64/nagios/plugins/check_forti.pl
+curl https://raw.githubusercontent.com/cloudcentral/monitoring-plugins/master/plugins/check_forti.pl -o /usr/lib64/nagios/plugins/check_forti.pl
 chmod +x /usr/lib64/nagios/plugins/check_forti.pl
+
+curl https://raw.githubusercontent.com/cloudcentral/monitoring-plugins/master/plugins/check_netint -o /usr/lib64/nagios/plugins/check_netint
+chmod +x /usr/lib64/nagios/plugins/check_netint
+
+curl https://raw.githubusercontent.com/cloudcentral/monitoring-plugins/master/plugins/check_cisco_mem -o /usr/lib64/nagios/plugins/check_cisco_mem
+chmod +x /usr/lib64/nagios/plugins/check_cisco_mem
